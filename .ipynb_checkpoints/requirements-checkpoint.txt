@@ -1,4 +1,5 @@
 av
 numpy
-skimage
+scikit-image
 matplotlib
+opencv-python
