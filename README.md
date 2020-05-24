@@ -19,3 +19,4 @@ main flow:
 * Generate output video sequence from the output frames
 
 Sample output shots using handed out test video:
+![Test drive](https://github.com/arilmad/Image-Analysis-Final-Project/blob/master/illustrations/mov_1.gif?raw=true)
