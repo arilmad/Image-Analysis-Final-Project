@@ -18,5 +18,12 @@ main flow:
     
 * Generate output video sequence from the output frames
 
-Sample output shots using handed out test video:
+__Output from test video run__
 ![Test drive](https://github.com/arilmad/Image-Analysis-Final-Project/blob/master/illustrations/mov_1.gif?raw=true)
+
+
+__Outputs from mock test video runs__
+![Test drive](https://github.com/arilmad/Image-Analysis-Final-Project/blob/master/illustrations/mock_1.gif?raw=true)
+![Test drive](https://github.com/arilmad/Image-Analysis-Final-Project/blob/master/illustrations/mock_2.gif?raw=true)
+![Test drive](https://github.com/arilmad/Image-Analysis-Final-Project/blob/master/illustrations/mock_3.gif?raw=true)
+
