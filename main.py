@@ -1,3 +1,5 @@
+print('Importing libraries...')
+
 import argparse
 import av
 import cv2
@@ -87,10 +89,16 @@ def collect_all_regions(seeds, im, min_region_size, max_region_size, l_thr, u_th
         
     return np.array(regions)
 
-def rgb_to_binary(im):
+def rgb_to_binary(im, invert=False, threshold=200):
     c = im.copy()
-    grayscale = (rgb2gray(c)*256).astype('uint8')
-    grayscale[grayscale != 0] = 1
+    grayscale = (rgb2gray(c)*255).astype('uint8')
+    
+    if invert: mask = grayscale > threshold
+    else: mask = grayscale < threshold
+    
+    grayscale[mask] = 0
+    grayscale[~mask] = 1
+    
     return grayscale
 
 def locate_frame(region):
@@ -118,7 +126,7 @@ def gray_to_color(gray_frame, color):
     assert (color in COLORS)
     
     c = COLORS[color]
-    rgb_cell = [0,0,0]
+    rgb_cell = [1,1,1]
     rgb_cell[c] = 255
     
     new_shape = (gray_frame.shape[0], gray_frame.shape[1], 3)
@@ -130,7 +138,7 @@ def gray_to_color(gray_frame, color):
 
 def locate_rgb_regions(rgb_im, seed, min_size, max_size, l_thr, u_thr):
     c = rgb_im.copy()
-    black_white = rgb_to_binary(c)*255
+    black_white = rgb_to_binary(c, threshold=10)*255
     seeds = create_index_grid(black_white.shape, seed)
     regions = collect_all_regions(seeds, black_white, min_size, max_size, l_thr, u_thr)
     return regions
@@ -213,14 +221,14 @@ def crop_content(frame):
     'Find content'
     for xi in range(max_x):
         for yi in range(max_y):
-            if (f[xi, yi] != np.array([255,255,255])).any():
+            if (f[xi, yi] < np.array([225,225,225])).any():
                 x_0 = min(xi, x_0)
                 y_0 = min(yi, y_0)
 
     x_1, y_1 = (x_0, y_0)
     for xi in range(max_x-1, x_0, -1):
         for yi in range(max_y-1, y_0, -1):
-            if (f[xi, yi] != np.array([255,255,255])).any():
+            if (f[xi, yi] < np.array([225,225,225])).any():
                 x_1 = max(xi, x_1)
                 y_1 = max(yi, y_1)
                 
@@ -228,7 +236,7 @@ def crop_content(frame):
 
 def periferal_pixels(im, width, threshold=0):
 
-    gray = rgb_to_binary(im)
+    gray = rgb_to_binary(im, invert=True)
     max_x, max_y = gray.shape
 
     perifery_pixels = sum(gray[0:width, 0:max_y].ravel()) + sum(gray[max_x-width:max_x, 0:max_y].ravel())
@@ -243,6 +251,12 @@ def calculator():
         s = yield s
         equation += s  
     yield eval(equation[:-1])
+
+def mark_indice(img, coord):
+    im = img.copy()
+    x, y = coord
+    im[x-2:x+2, y-2:y+2] = (255, 0 ,0)
+    return im
 
 def visualize_equation(shape):
     mask = np.zeros(shape).astype('uint8')
@@ -326,11 +340,12 @@ def classifier():
     image = None
     while True:
         im = (yield image)
-        im = Image.fromarray(im).resize((20,20))
-        im = np.array(ImageOps.invert(ImageOps.expand(ImageOps.invert(im), (4,4))))
-        im = rgb_to_binary(im).reshape(1,28,28,1)
+        im = Image.fromarray(im).resize((24,24))
+        im = np.array(ImageOps.invert(ImageOps.expand(ImageOps.invert(im), (2,2))))
+        im = rgb_to_binary(im, invert=True).reshape(1,28,28,1)
         pred = mod.predict_classes(im)[0]
         yield d[pred]
+
 
 
 if __name__ == '__main__':
@@ -349,6 +364,7 @@ if __name__ == '__main__':
     assert len(src_path), 'No input path read'
     assert len(output_path), 'No output path read'
 
+    major_tick = time()
     print('(main) Loading frames')
     frames = load_frames(src_path)
     n = len(frames)
@@ -380,7 +396,7 @@ if __name__ == '__main__':
     OPERATORS = ['+', '-', '/', '*', '=']
 
     last_symbol_was_operator = True
-
+    cs = []
     for i, f in enumerate(frames):
 
         tic = time()
@@ -392,7 +408,6 @@ if __name__ == '__main__':
         #       to move from one clear shot to another in one frame) 
         valid = active_equation and (symbols[-1] == 'N')
 
-
         # Symbol subject to change if a valid classification is made
         symbol = 'N'
 
@@ -403,7 +418,7 @@ if __name__ == '__main__':
 
         # Locate arrow indices using region growing
         # parameters: image, seed_grid_spacing, min_region_size, max_region_size, l_pixel_threshold, u_pixel_threshold
-        arrow_regions = locate_rgb_regions(arrow, 15, 1000, 3000, 250, 256)
+        arrow_regions = locate_rgb_regions(arrow, 10, 1000, 3000, 10, 256)
         assert (len(arrow_regions)==1), 'Found no arrow in frame {}'.format(i)
 
         # Draw surrounding rectangle
@@ -425,7 +440,7 @@ if __name__ == '__main__':
         # Discard candidate if there exist objects on the border
         # i.e. we do not have an entirely encapsulated object in the image
         valid &= not periferal_pixels(candidate, 5)
-
+        
         if valid: 
             # Discard candidate if frame mostly white
             valid = sum(candidate.ravel()) / len(candidate.ravel())<254
@@ -458,13 +473,15 @@ if __name__ == '__main__':
 
                         # = terminates the equation and implies no need for further classification
                         active_equation = (symbol != '=')
-
+        cs.append(candidate)
+        
         symbols += symbol
         if i == n-1 and active_equation:
             valid = True
             symbol = '='
             active_equation = False
             result = calc.send(symbol)
+            
         print('{}'.format(valid), end='\t')
         print('  {}'.format(symbol), end='\t')
 
@@ -475,9 +492,7 @@ if __name__ == '__main__':
         output_frames.append(with_equation)
         toc = time()    
         print(f'{toc-tic:.2f}s')
-
     make_video(output_frames, output_path)
     major_tock = time()
-
     print('+-----------------------------+')
     print(f'   Total time: {major_tock-major_tick:.2f}s')
