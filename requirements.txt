@@ -4,4 +4,4 @@ scikit-image
 matplotlib
 opencv-python
 pillow
-keras
+tensorflow
