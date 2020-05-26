@@ -1,22 +1,19 @@
 print('Importing libraries...')
 
 import argparse
-import av
-import cv2
+from av import open, VideoFrame
 import numpy as np
-import skimage
 from skimage.color import rgb2gray
 from skimage.exposure import rescale_intensity
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from matplotlib import pyplot as plt
 from time import time
-from tensorflow import keras
+from tensorflow.keras.models import load_model
 
 def load_frames(video_path):
     'Loads .avi video into array'
     
     frames = []
-    v = av.open(video_path)
+    v = open(video_path)
     for packet in v.demux():
         for frame in packet.decode():
             img = frame.to_image()
@@ -304,7 +301,7 @@ def poke_visualizer(viz, im, coord, symbol, valid, result):
     return frame
 
 def make_video(frames, path):
-    container = av.open(path, mode='w')
+    container = open(path, mode='w')
     
     stream = container.add_stream('rawvideo', rate=2)
     (h, w) = frames[0].shape[:-1]
@@ -314,13 +311,13 @@ def make_video(frames, path):
     stream.pix_fmt = 'yuv420p'
     
     for f in frames:
-        frame = av.VideoFrame.from_ndarray(f, format='rgb24')
+        frame = VideoFrame.from_ndarray(f, format='rgb24')
         for packet in stream.encode(frame): container.mux(packet)
     for packet in stream.encode(): container.mux(packet)
     container.close()
 
 def classifier():
-    mod = keras.models.load_model('models/mod_3_epochs')
+    mod = load_model('models/mod_3_epochs')
     d = {
         0: '0',
         1: '1',
@@ -364,7 +361,6 @@ if __name__ == '__main__':
     assert len(src_path), 'No input path read'
     assert len(output_path), 'No output path read'
 
-    major_tick = time()
     print('(main) Loading frames')
     frames = load_frames(src_path)
     n = len(frames)
