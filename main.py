@@ -275,12 +275,11 @@ def calculator():
     yield eval(equation[:-1])
 
 def visualize_equation(shape):
+    'Holds the current and previous (visual) state of the equation'
+
     mask = np.zeros(shape).astype('uint8')
-    
     max_y, max_x = mask.shape[:-1]
-    
     mask[-64:, :-128, :] = [1, 1, 1] 
-    
     mask = Image.fromarray(mask)
     draw = ImageDraw.Draw(mask)
     
@@ -290,25 +289,23 @@ def visualize_equation(shape):
     draw.text((offset, max_y-40),"Equation: ",(255,255,255), font=font)
     
     offset += 0.6*font_size*8
-    
     frame, validity, symbol = (None, None, None)
 
     while True:
         f = (yield frame)
         v = (yield validity)
         s = (yield symbol)
-        
         if v:
             draw.text((offset, max_y-40), s ,(255,255,255), font=font)
             offset += 0.6*font_size*1.3
         yield overlap_frames(f, np.array(mask))
 
 def visualize_path(shape):
+    'Holds the current and previous (visual) state of the arrow path'
     mask = np.zeros(shape).astype('uint8')
 
     mask = Image.fromarray(mask)
     draw = ImageDraw.Draw(mask)
-
     frame, coord, last_coord = (None, (0,0), None)
     while True:
         f = (yield frame)
@@ -319,6 +316,7 @@ def visualize_path(shape):
         yield overlap_frames(f, np.array(mask))
 
 def poke_eq_visualizer(viz, im, symbol, valid, result):
+    'Helps tidy up main. Checks if symbol is = in which case it also yields result to visualizer'
     next(viz)
     viz.send(im), viz.send(valid)
     frame = viz.send(symbol)
@@ -329,6 +327,7 @@ def poke_eq_visualizer(viz, im, symbol, valid, result):
     return frame
 
 def make_video(frames, path):
+    'Collects np.array of frames and outputs avi video'
     container = open(path, mode='w')
     
     stream = container.add_stream('rawvideo', rate=2)
@@ -345,6 +344,7 @@ def make_video(frames, path):
     container.close()
 
 def classifier():
+    'Loads the model. Takes input image, prepares it for prediction and translates the predicted class'
     mod = load_model('models/mod_3_epochs')
     d = {
         0: '0',
