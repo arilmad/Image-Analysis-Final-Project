@@ -1,5 +1,4 @@
 print('Importing libraries...')
-
 import argparse
 from av import open, VideoFrame
 import numpy as np
@@ -11,7 +10,7 @@ from tensorflow.keras.models import load_model
 
 def load_frames(video_path):
     'Loads .avi video into array'
-    
+
     frames = []
     v = open(video_path)
     for packet in v.demux():
@@ -22,6 +21,7 @@ def load_frames(video_path):
     return frames
 
 def equalize_intensity(img):
+    'Rescale image intesity'
     p2, p98 = np.percentile(img, (0, 18))
     return rescale_intensity(img, in_range=(p2,p98))
 
@@ -37,12 +37,11 @@ def rgb_threshold(im, thresholds):
     return c
 
 def create_index_grid(image_shape, distance):
-    'Creates an evenly spaced grid of coordinates across an image'
-               
+    'Returns evenly spaced coordinate grid' 
     return [(x, y) for x in range(0, image_shape[0], distance) for y in range(0, image_shape[1], distance)]
 
 def collect_region(seed, visited, im, lower_threshold, upper_threshold):
-    'Returns a region of pixel coordinate neighbours withing thresholds'
+    'Returns a region of pixel coordinate neighbours within thresholds'
 
     detected = set([seed])
     region = set()
@@ -71,7 +70,7 @@ def collect_region(seed, visited, im, lower_threshold, upper_threshold):
     return list(region)
 
 def collect_all_regions(seeds, im, min_region_size, max_region_size, l_thr, u_thr):
-    'Runs collectRegion for every seed and returns a list of all connex regions in the image'
+    'Runs collect_region for every seed and returns a list of all connex regions in the image'
     
     regions = []
     visited = set()
@@ -87,6 +86,8 @@ def collect_all_regions(seeds, im, min_region_size, max_region_size, l_thr, u_th
     return np.array(regions)
 
 def rgb_to_binary(im, invert=False, threshold=200):
+    'Converts RGB image to a binary image'
+
     c = im.copy()
     grayscale = (rgb2gray(c)*255).astype('uint8')
     
@@ -98,7 +99,9 @@ def rgb_to_binary(im, invert=False, threshold=200):
     
     return grayscale
 
-def locate_frame(region):
+def locate_min_max(region):
+    'Identifies the min and max values from a set of coordinates'
+
     max_x = max(region[:,0])
     max_y = max(region[:,1])
     min_x = min(region[:,0])
@@ -107,7 +110,8 @@ def locate_frame(region):
     return max_x, max_y, min_x, min_y
 
 def draw_bw_rectangle(im_shape, max_x, max_y, min_x, min_y):
-        
+    'Draws a white rectangle on a black background'
+
     g = np.zeros(im_shape)
     
     g[max_x-3:max_x+3, min_y:max_y] = 255
@@ -119,6 +123,8 @@ def draw_bw_rectangle(im_shape, max_x, max_y, min_x, min_y):
     return g
 
 def gray_to_color(gray_frame, color):
+    'Transforms original BW image to RGB image where every set pixel is assigned a color'
+
     COLORS = {'red':0, 'green':1, 'blue':2}
     assert (color in COLORS)
     
@@ -134,6 +140,8 @@ def gray_to_color(gray_frame, color):
     return rgb_frame
 
 def locate_rgb_regions(rgb_im, seed, min_size, max_size, l_thr, u_thr):
+    'Performs region growing on RGB image'
+
     c = rgb_im.copy()
     black_white = rgb_to_binary(c, threshold=10)*255
     seeds = create_index_grid(black_white.shape, seed)
@@ -141,37 +149,48 @@ def locate_rgb_regions(rgb_im, seed, min_size, max_size, l_thr, u_thr):
     return regions
 
 def overlap_frames(underlying, overlying):
+    'Returns underlying frame overlapped by overlying frame'
     c = underlying.copy()
     c[np.where(overlying)] = overlying[np.where(overlying)]
     return c
 
 def extract_candidate_frame(im, max_x, max_y, min_x, min_y):
-    
+    'Extracts the area between maximas and minimas from a reference image'
+
+    # Image borders
     x_limit, y_limit = im.shape[:-1]
     
+    # Will always return a square. Identify required width
     width = max(max_x-min_x, max_y-min_y)
 
+    # If y is longer than x, we need to expand in x direction
     x_delta = width - (max_x-min_x)
-    min_x -= x_delta//2
-    buffer = min(0, min_x)
     
+    min_x -= x_delta//2
     max_x += x_delta//2
-    'If border point'
-    if buffer: 
+
+    # Problem #1: We might try to exceed image boundaries
+    # Check if min_x < 0
+    buffer = min(0, min_x)
+
+    if buffer:
         max_x += (-buffer)
         min_x = 0
     else:
+        # Check if max_X > x_limit
         buffer = max_x - (x_limit-1)
         if buffer > 0: 
             min_x -= buffer
             max_x = x_limit-1
     
+    # Perform same test for y direction
     y_delta = width - (max_y-min_y)
+
     min_y -= y_delta//2
+    max_y += y_delta//2
+
     buffer = min(0, min_y)
 
-    max_y += y_delta//2
-    'If border point'
     if buffer: 
         max_y += (-buffer)
         min_y = 0
@@ -180,42 +199,35 @@ def extract_candidate_frame(im, max_x, max_y, min_x, min_y):
         if buffer > 0: 
             min_y -= buffer
             max_y = y_limit-1
-            
-    img = im.copy()
-    img = img[min_x:max_x, min_y:max_y]
         
+    img = im.copy()
+    img = img[min_x:max_x, min_y:max_y] 
     return np.array(img)
 
 def add_colored_thumbnail(original_frame, candidate, candidate_validity):
-    
-    'Stretch the candidate'
+    'Add a view of the candidate to an original frame, color-coded with the validity of the candidate'
+
     c = Image.fromarray(candidate).resize((128, 128))
     
-    'Make a white or red background depending on candidate validity'
+    # Make a white or red background depending on candidate validity
     if candidate_validity: 
         bg = np.array([[[255,255,255] for _ in range(128)] for _ in range(128)]).astype('uint8')
     else: 
         bg = np.array([[[255,0,0] for _ in range(128)] for _ in range(128)]).astype('uint8')
         
-    bg = Image.fromarray(bg)
-    
-    'Blend the candidate image and the colored background'
+    bg = Image.fromarray(bg)    
     c = Image.blend(bg, c, alpha=0.5)
-    
-    'And apply it to the bottom right corner of the original frame'
     frame = original_frame.copy()
     frame[-128:, -128:] = c
-       
     return frame
 
 def crop_content(frame):
+    'Tightly crops dark content in a frame'
 
     f = frame.copy()
     max_x, max_y = f.shape[:-1]
-
     x_0, y_0 = (max_x, max_y)
 
-    'Find content'
     for xi in range(max_x):
         for yi in range(max_y):
             if (f[xi, yi] < np.array([225,225,225])).any():
@@ -232,13 +244,17 @@ def crop_content(frame):
     return f[x_0:x_1, y_0:y_1]
 
 def pad_quadratic(frame):
+    'Expands frame to a square by white padding'
+
     y, x = frame.shape[:-1]
     f = frame.copy()
     mx = max(x, y)
+
     padded = ImageOps.expand(Image.fromarray(f), ((mx-x)//2, (mx-y)//2), fill='white')
     return np.array(padded)
 
 def periferal_pixels(im, width, threshold=0):
+    'Returns false if more than _threshold_ set (binary) pixels are found within the outer _width_ pixels of the frame'
 
     gray = rgb_to_binary(im, invert=True)
     max_x, max_y = gray.shape
@@ -249,6 +265,8 @@ def periferal_pixels(im, width, threshold=0):
     return perifery_pixels > threshold 
 
 def calculator():
+    'Holds the current state of the equation. Yields result when fed ='
+
     equation = ' '
     s = ' '  
     while s != '=':
@@ -273,30 +291,40 @@ def visualize_equation(shape):
     
     offset += 0.6*font_size*8
     
-    frame, validity, coord, symbol = (None, None, (0, 0), None)
-    last_coord = None
+    frame, validity, symbol = (None, None, None)
+
     while True:
         f = (yield frame)
         v = (yield validity)
-        y,x = (yield coord)
         s = (yield symbol)
         
-        new_coord = (x, y)
         if v:
             draw.text((offset, max_y-40), s ,(255,255,255), font=font)
             offset += 0.6*font_size*1.3
-        if last_coord:
-            draw.line((last_coord, new_coord), width=5, fill=(1,255,1))
+        yield overlap_frames(f, np.array(mask))
+
+def visualize_path(shape):
+    mask = np.zeros(shape).astype('uint8')
+
+    mask = Image.fromarray(mask)
+    draw = ImageDraw.Draw(mask)
+
+    frame, coord, last_coord = (None, (0,0), None)
+    while True:
+        f = (yield frame)
+        y, x = yield(coord)
+        new_coord = (x, y)
+        if last_coord: draw.line((last_coord, new_coord), width=5, fill=(1,255,1))
         last_coord = new_coord
         yield overlap_frames(f, np.array(mask))
 
-def poke_visualizer(viz, im, coord, symbol, valid, result):
+def poke_eq_visualizer(viz, im, symbol, valid, result):
     next(viz)
-    viz.send(im), viz.send(valid), viz.send(coord)
+    viz.send(im), viz.send(valid)
     frame = viz.send(symbol)
     if symbol == '=':
         next(viz)
-        viz.send(im), viz.send(valid), viz.send(coord)
+        viz.send(im), viz.send(valid)
         frame = viz.send(str(result))
     return frame
 
@@ -376,7 +404,10 @@ if __name__ == '__main__':
     next(calc)
 
     # Keeps track of the equation visualization state
-    viz = visualize_equation(frames[0].shape)
+    eq_viz = visualize_equation(frames[0].shape)
+
+    # Keeps track of the arrow path state
+    path_viz = visualize_path(frames[0].shape)
 
     # Helper variables for equation integrity purposes
     result = 0
@@ -418,16 +449,14 @@ if __name__ == '__main__':
         assert (len(arrow_regions)==1), 'Found no arrow in frame {}'.format(i)
 
         # Draw surrounding rectangle
-        max_x, max_y, min_x, min_y = locate_frame(arrow_regions[0])
+        max_x, max_y, min_x, min_y = locate_min_max(arrow_regions[0])
         center_coord = (min_x + (max_x-min_x)//2, min_y + (max_y-min_y)//2)
         bw_rectangle = draw_bw_rectangle(arrow.shape[:-1], max_x, max_y, min_x, min_y)
         rgb_rectangle = gray_to_color(bw_rectangle, 'green')
 
         # Assume all symbols are visible in first frame
         # Use this as a reference for later
-        if i == 0: 
-            reference_region = set([tuple(a) for a in arrow_regions[0]])
-            reference_frame = eqf
+        if i == 0: reference_frame = eqf
 
         # Extract candidate from reference frame, 
         # corresponding to the area beneath vehicle in this frame
@@ -440,36 +469,33 @@ if __name__ == '__main__':
         if valid: 
             # Discard candidate if frame mostly white
             valid = sum(candidate.ravel()) / len(candidate.ravel())<254
+
             if valid: 
-                # Discard candidate if it overlaps with the reference frame
-                valid = len(set([tuple(a) for a in arrow_regions[0]])&reference_region)==0
+                # Candidate fit for prediction
+                candidate = crop_content(candidate)
+                candidate = pad_quadratic(candidate)
+                prediction = clf.send(candidate)
+                next(clf)
+
+                # Analyze the result. Every other classification should be an operator
+                valid = False
+                if prediction in OPERATORS:
+                    if not last_symbol_was_operator: 
+                        symbol = prediction
+                        valid = True
+                        last_symbol_was_operator = True
+                else:
+                    if last_symbol_was_operator: 
+                        symbol = prediction
+                        valid = True
+                        last_symbol_was_operator = False
 
                 if valid:
-                    # Candidate fit for prediction
-                    candidate = crop_content(candidate)
-                    candidate = pad_quadratic(candidate)
-                    prediction = clf.send(candidate)
-                    next(clf)
+                    # Send valid symbol to calculator
+                    result = calc.send(symbol)
 
-                    # Analyze the result. Every other classification should be an operator
-                    valid = False
-                    if prediction in OPERATORS:
-                        if not last_symbol_was_operator: 
-                            symbol = prediction
-                            valid = True
-                            last_symbol_was_operator = True
-                    else:
-                        if last_symbol_was_operator: 
-                            symbol = prediction
-                            valid = True
-                            last_symbol_was_operator = False
-
-                    if valid:
-                        # Send valid symbol to calculator
-                        result = calc.send(symbol)
-
-                        # = terminates the equation and implies no need for further classification
-                        active_equation = (symbol != '=')
+                    # = terminates the equation and implies no need for further classification
+                    active_equation = (symbol != '=')
 
         
         symbols += symbol
@@ -486,8 +512,10 @@ if __name__ == '__main__':
         # prepare the output frame
         with_arrow_rect = overlap_frames(f, rgb_rectangle)
         with_thumbnail = add_colored_thumbnail(with_arrow_rect, candidate, valid)
-        with_equation = poke_visualizer(viz, with_thumbnail, center_coord, symbol, valid, result)
-        output_frames.append(with_equation)
+        with_equation = poke_eq_visualizer(eq_viz, with_thumbnail, symbol, valid, result)
+        next(path_viz), path_viz.send(with_equation) 
+        with_path = path_viz.send(center_coord)
+        output_frames.append(with_path)
         toc = time()    
         print(f'{toc-tic:.2f}s')
     make_video(output_frames, output_path)
