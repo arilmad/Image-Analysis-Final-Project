@@ -14,7 +14,7 @@ main flow:
     * If there exist objects on the candidate borders: iteratively peel off border pixels until
         * _i)_ Candidate is smaller than 28x28 pixels. Render candidate invalid
         * _ii)_ Candidate is larger than 28x28 and has no objects on its borders
-    * If the area looks interesting (i.e. not empty and does encapsulate its objects: send to classifier
+    * If the area looks interesting (i.e. not empty and does encapsulate its objects): send to classifier
     * Accept only the classification result if every other symbol is an operator
     * No need for further classification in the sequence if a '=' is identified. Calculate
     * Construct output frame
