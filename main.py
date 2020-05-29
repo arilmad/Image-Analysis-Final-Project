@@ -264,6 +264,12 @@ def periferal_pixels(im, width, threshold=0):
     
     return perifery_pixels > threshold 
 
+def peel_off(img, k):
+    'Peels off the k outer pixels of image'
+    im = img.copy()
+    y, x = im.shape[:-1]
+    return im[k:x-k, k:y-k]
+
 def calculator():
     'Holds the current state of the equation. Yields result when fed ='
 
@@ -462,10 +468,18 @@ if __name__ == '__main__':
         # corresponding to the area beneath vehicle in this frame
         candidate = extract_candidate_frame(reference_frame, max_x, max_y, min_x, min_y)
 
-        # Discard candidate if there exist objects on the border
-        # i.e. we do not have an entirely encapsulated object in the image
-        valid &= not periferal_pixels(candidate, 5)
-        
+
+        M = 2
+        original_candidate = candidate.copy()
+        # If there are dark areas on the border: iteratively peel off border pixels and
+        # reevaluate. Stop iterations if candidate is smaller than 28x28 and still has
+        # dark perifery pixels.
+        while valid and periferal_pixels(candidate, M):
+            candidate = peel_off(candidate, M)
+            if len(candidate.ravel()) < 28*28: 
+                candidate = original_candidate
+                valid = False
+                
         if valid: 
             # Discard candidate if frame mostly white
             valid = sum(candidate.ravel()) / len(candidate.ravel())<254
@@ -484,6 +498,7 @@ if __name__ == '__main__':
                         symbol = prediction
                         valid = True
                         last_symbol_was_operator = True
+                elif prediction == 'N': pass
                 else:
                     if last_symbol_was_operator: 
                         symbol = prediction
